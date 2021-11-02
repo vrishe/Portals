@@ -1,109 +1,41 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 
-[ExecuteInEditMode]
 public class Wormhole : MonoBehaviour
 {
-    public static Wormhole Instance { get; private set; }
+    public Portal In;
+    public Portal Out;
 
-    private Portal _in, _out;
-    private Updater _updater;
-
-    public Portal In
+    public void Teleport(Transform t, PortalMode mode)
     {
-        get => _in;
-        set
+        var portalIn = In;
+        var portalOut = Out;
+
+        if (mode == PortalMode.Out)
         {
-            _in = value;
-            if (_in != null)
-            {
-                _in.Mode = PortalMode.In;
-                if (_in == _out)
-                {
-                    _out = null;
-                }
-            }
-
-            OnPortalsChanged();
-        }
-    }
-
-    public Portal Out
-    {
-        get => _out;
-        set
-        {
-            _out = value;
-            if (_out != null)
-            {
-                _out.Mode = PortalMode.Out;
-                if (_out == _in)
-                {
-                    _in = null;
-                }
-            }
-
-            OnPortalsChanged();
-        }
-    }
-      
-    private void Awake()
-    {
-        Instance = this;
-    }
-
-    private void Reset()
-    {
-        if (_updater)
-        {
-            DestroyImmediate(_updater.gameObject);
+            portalIn = Out;
+            portalOut = In;
         }
 
-        Start();
+        var m = portalOut.transform.localToWorldMatrix
+            * portalIn.transform.worldToLocalMatrix
+            * t.localToWorldMatrix
+            * Matrix4x4.Rotate(Quaternion.Euler(0, 180, 0));
+
+        t.position = m.GetColumn(3);
+        t.rotation = m.rotation;
     }
 
     private void Start()
     {
-        var go = new GameObject(nameof(Wormhole) + " Updater", typeof(Updater));
-        go.hideFlags = HideFlags.HideAndDontSave;
-
-        _updater = go.GetComponent<Updater>();
-        _updater.enabled = false;
-        _updater.Owner = this;
-
-        OnPortalsChanged();
+        In.MainTexture = Out.Camera.activeTexture;
+        Out.MainTexture = In.Camera.activeTexture;
     }
 
-    private void OnDestroy()
+    private void Update()
     {
-        DestroyImmediate(_updater.gameObject);
-    }
+        var t_cam = Camera.main.transform.localToWorldMatrix;
 
-    private void OnPortalsChanged()
-    {
-        _updater.enabled = _in && _out;
-    }
-
-    [ExecuteAlways]
-    private class Updater : MonoBehaviour
-    {
-        public Wormhole Owner;
-
-        private Camera _eyes;
-
-        private void OnEnable()
-        {
-            _eyes = Camera.main;
-        }
-
-        private void Update()
-        {
-            Owner.Out.SetEyesTransform(Owner.In.transform.worldToLocalMatrix
-                * _eyes.transform.localToWorldMatrix);
-
-            Owner.In.SetEyesTransform(Owner.Out.transform.worldToLocalMatrix
-                * _eyes.transform.localToWorldMatrix);
-        }
+        In.SetEyesTransform(Out.transform.worldToLocalMatrix * t_cam);
+        Out.SetEyesTransform(In.transform.worldToLocalMatrix * t_cam);
     }
 }

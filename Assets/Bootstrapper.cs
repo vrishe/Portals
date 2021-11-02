@@ -2,12 +2,13 @@
 
 public class Bootstrapper : MonoBehaviour
 {
+    public PostRenderEvent postRenderEvent;
+
     // Start is called before the first frame update
     void Start()
     {
-        var w = Wormhole.Instance;
+        postRenderEvent.Init();
 
-        w.In  = GameObject.Find("Portal_I").GetComponent<Portal>();
-        w.Out = GameObject.Find("Portal_O").GetComponent<Portal>();
+        Destroy(gameObject);
     }
 }

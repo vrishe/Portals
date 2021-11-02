@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 public enum PortalMode
@@ -7,83 +8,129 @@ public enum PortalMode
     In
 }
 
-[ExecuteInEditMode]
-[RequireComponent(typeof(BoxCollider))]
+[RequireComponent(typeof(MeshFilter))]
+[RequireComponent(typeof(MeshRenderer))]
 public class Portal : MonoBehaviour
 {
-    private BoxCollider _collider;
-    private Camera _camera;
-
+    private Material _mat;
     private Matrix4x4 _gizmoMatrix;
     private Mesh _gizmoMesh;
+    private GameObject _occluder;
 
     public PortalMode Mode;
+
+    public int Id => 64 << (int)Mode;
+
+    public Camera Camera { get; private set; }
+
+    public Texture MainTexture
+    {
+        get => _mat.mainTexture;
+        set => _mat.mainTexture = value;
+    }
 
     public void SetEyesTransform(Matrix4x4 m)
     {
         m = Matrix4x4.Rotate(Quaternion.Euler(0, 180, 0)) * m;
 
-        var t = _camera.transform;
-
+        var t = Camera.transform;
         t.localPosition = m.GetColumn(3);
+        t.localRotation = m.rotation;
+    }
 
-        var m0 = m.GetColumn(0);
-        var m1 = m.GetColumn(1);
-        var m2 = m.GetColumn(2);
+    private static Action<UnityEngine.Object> GetUniversalDestroyRoutine()
+    {
+        if (Application.isEditor)
+        {
+            return DestroyImmediate;
+        }
 
-        t.localScale.Set(m0.magnitude, m1.magnitude, m2.magnitude);
+        return Destroy;
+    }
 
-        var q = new Quaternion(
-            .5f * Mathf.Sqrt(Mathf.Max(1 + m0[0] - m1[1] - m2[2], 0)),
-            .5f * Mathf.Sqrt(Mathf.Max(1 - m0[0] + m1[1] - m2[2], 0)),
-            .5f * Mathf.Sqrt(Mathf.Max(1 - m0[0] - m1[1] + m2[2], 0)),
-            .5f * Mathf.Sqrt(Mathf.Max(1 + m0[0] + m1[1] + m2[2], 0)));
+    private void OnDestroy()
+    {
+        var destroyer = GetUniversalDestroyRoutine();
 
-        q.x = Mathf.Abs(q.x) * Mathf.Sign(m1[2] - m2[1]);
-        q.y = Mathf.Abs(q.y) * Mathf.Sign(m2[0] - m0[2]);
-        q.z = Mathf.Abs(q.z) * Mathf.Sign(m0[1] - m1[0]);
+        if (Camera)
+        {
+            Camera.targetTexture.Release();
 
-        t.localRotation = q;
+            destroyer(Camera.gameObject);
+            destroyer(_mat);
+        }
+
+        if (_occluder)
+        {
+            destroyer(_occluder);
+        }
     }
 
     private void Reset()
     {
-        if (_camera)
-        {
-            DestroyImmediate(_camera.gameObject);
-        }
-
+        OnDestroy();
         Start();
     }
 
     private void Start()
     {
-        if (!_camera)
-        {
-            var go = new GameObject("Camera", typeof(Camera));
-            go.hideFlags = HideFlags.HideAndDontSave;
+        const HideFlags objHideFlags = HideFlags.DontSave;
 
+        var
+        go = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        go.hideFlags = objHideFlags;
+        {
+            if (go.TryGetComponent<MeshCollider>(out var c))
+            {
+                Destroy(c);
+            }
+
+            var t = go.transform;
+            t.SetParent(transform, false);
+            t.localScale = Matrix4x4.Scale(transform.localScale).inverse * t.localScale;
+
+            var matOccluder = new Material(Shader.Find("Unlit/Occluder"));
+
+            var mr = go.GetComponent<MeshRenderer>();
+            mr.material = matOccluder;
+
+            go.layer = LayerMask.NameToLayer("PortalOccluder");
+        }
+
+        _occluder = go;
+
+        go = new GameObject(nameof(Camera));
+        go.hideFlags = objHideFlags;
+        {
             var t = go.transform;
             t.Rotate(0, 180, 0);
             t.SetParent(transform);
 
-            _camera = go.GetComponent<Camera>();
-            _camera.enabled = false;
+            _mat = new Material(Shader.Find("Unlit/PortalScreenSpaceShader"));
+
+            var mr = GetComponent<MeshRenderer>();
+            mr.material = _mat;
         }
 
-        _collider = GetComponent<BoxCollider>();
-
-        PrepareGizmos();
+        Camera = go.AddComponent<Camera>();
+        Camera.depth = float.MinValue;
+        Camera.targetTexture = new RenderTexture(Screen.width, Screen.height, 24);
+        Camera.cullingMask &= ~(1 << LayerMask.NameToLayer("Portal"));
     }
 
     private void PrepareGizmos()
     {
+        if (_gizmoMesh != null)
+        {
+            return;
+        }
+
         _gizmoMatrix = Matrix4x4.Translate(
             -new Vector3(.5f, .5f));
 
         _gizmoMesh = new Mesh
         {
-            subMeshCount = 4,
+            subMeshCount = 5,
             vertices = new[] {
                 new Vector3(0,0),
                 new Vector3(0,1),
@@ -111,6 +158,7 @@ public class Portal : MonoBehaviour
 
         // Bounds
         _gizmoMesh.SetIndices(new int[] { 0, 1, 1, 2, 2, 3, 3, 0 }, MeshTopology.Lines, 2);
+        _gizmoMesh.SetIndices(new int[] { 2, 1, 0, 0, 3, 2 }, MeshTopology.Triangles, 4);
 
         // Arrows
         _gizmoMesh.SetIndices(new int[] { 8, 5, 4, 5, 5, 6 }, MeshTopology.Lines, 1);
@@ -119,28 +167,38 @@ public class Portal : MonoBehaviour
 
     private void OnDrawGizmos()
     {
+        PrepareGizmos();
+
         var
-        m = transform.localToWorldMatrix
-            * Matrix4x4.Translate(_collider.center);
+        m = transform.localToWorldMatrix;
 
         Gizmos.color = Mode == PortalMode.In ?
             Color.red : Color.blue;
 
-        var m0 = m
-            * Matrix4x4.Scale(_collider.size)
-            * _gizmoMatrix;
+        var m0 = m * _gizmoMatrix;
 
         m0.m22 = 1;
 
         Gizmos.matrix = m0;
         Gizmos.DrawWireMesh(_gizmoMesh, 2);
 
-        var m1 = m * _gizmoMatrix;
+        var scale = transform.localScale;
+
+        scale.z *= -1;
+
+        var m1 = m
+            * Matrix4x4.Scale(scale).inverse
+            * _gizmoMatrix;
 
         Gizmos.matrix = m1;
         Gizmos.DrawWireMesh(_gizmoMesh, (int)Mode);
 
-        m = _camera.transform.localToWorldMatrix
+        if (!Camera)
+        {
+            return;
+        }
+
+        m = Camera.transform.localToWorldMatrix
             * _gizmoMatrix;
 
         Gizmos.matrix = m;
