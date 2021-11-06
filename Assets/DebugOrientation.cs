@@ -1,14 +1,22 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class DebugOrientation : MonoBehaviour
+[ExecuteInEditMode]
+public sealed class DebugOrientation : MonoBehaviour
 {
     private Matrix4x4 _gizmoMatrix;
     private Mesh _gizmoMesh;
 
     public Color gizmoColor;
     public float normalLength = 1;
+
+    private void Awake()
+    {
+        if (gizmoColor == Color.clear)
+        {
+            gizmoColor = RandomUtils.GetRandomColor();
+        }
+    }
 
     private void PrepareGizmos()
     {
@@ -59,7 +67,9 @@ public class DebugOrientation : MonoBehaviour
         Gizmos.matrix = m * _gizmoMatrix;
         Gizmos.DrawWireMesh(_gizmoMesh, 0);
 
-        Gizmos.matrix = m * Matrix4x4.Scale(new Vector3(1,1,normalLength)) * _gizmoMatrix;
+        m = Matrix4x4.TRS(transform.position, transform.rotation, new Vector3(1, 1, normalLength));
+
+        Gizmos.matrix = m * _gizmoMatrix;
         Gizmos.DrawWireMesh(_gizmoMesh, 1);
     }
 }

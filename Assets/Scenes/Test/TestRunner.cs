@@ -1,60 +1,110 @@
-using System.Collections;
-using System.Collections.Generic;
 using System.Linq;
+using UnityEditor;
 using UnityEngine;
+using Wormhole;
 
 [ExecuteInEditMode]
 public class TestRunner : MonoBehaviour
 {
+    private SimplePortalSpace _portals;
+
+    private Transform _portalA;
+    private Transform _portalB;
+    private Camera _portalCamera;
+
     private MeshFilter _quadDst;
     private MeshFilter _quadSrc;
 
     public Camera mainCamera;
-    public Camera portalCamera;
-
-    public Transform portalA;
-    public Transform portalB;
-
+    public GameObject portalPrefab;
     public RenderTexture receiverTexture;
 
     public float clippingPlaneOffset = 0.001f;
 
-    private void OnEnable()
+    private void Awake()
     {
-        _quadDst = portalA.GetComponentInChildren<MeshFilter>();
-        _quadSrc = portalB.GetComponentInChildren<MeshFilter>();
-
-        _quadDst.mesh = Instantiate(_quadSrc.sharedMesh);
+        GeneratePortals();
     }
 
-    void Update()
+    private bool EnsureConrfigured()
     {
-        Portals.CalculatePortalView(mainCamera, portalA, portalB, portalCamera);
+        return mainCamera && receiverTexture && _portals != null;
+    }
 
-        var Z = portalCamera.worldToCameraMatrix;
-        var n = Z.MultiplyVector(portalB.forward);
-        var c = Z.MultiplyPoint3x4(portalB.position + clippingPlaneOffset * portalB.forward);
+    private void Update()
+    {
+        if (!EnsureConrfigured())
+        {
+            return;
+        }
 
-        var M = portalCamera.projectionMatrix;
-        var M_inv = M.inverse;
+        _portals.UpdateCameras(mainCamera);
 
-        var C = new Vector4(n.x, n.y, n.z, -Vector3.Dot(n, c));
-        var C_1 = M_inv.transpose * C;
-        var Q_1 = new Vector4(Mathf.Sign(C_1.x), Mathf.Sign(C_1.y), 1, 1);
-        var Q = M_inv * Q_1;
+        _portalCamera.targetTexture = receiverTexture;
 
-        var M_4 = M.GetRow(3);
-        M_4 = (2 * Vector4.Dot(M_4, Q) / Vector4.Dot(C, Q)) * C - M_4;
-
-        M.SetRow(2, M_4);
-
-        portalCamera.projectionMatrix = M;
-        portalCamera.targetTexture = receiverTexture;
-
-        var P = _quadSrc.transform.localToWorldMatrix;
+        var P = _quadSrc.transform.localToWorldMatrix * Matrix4x4.Scale(new Vector3(-1, 1, 1));
         _quadDst.sharedMesh.SetUVs(0, _quadDst.sharedMesh.vertices.Select(P.MultiplyPoint3x4)
-            .Select(portalCamera.WorldToViewportPoint)
+            .Select(_portalCamera.WorldToViewportPoint)
             .Select(v3 => new Vector2(v3.x, v3.y))
             .ToArray());
+    }
+
+    private void GeneratePortals()
+    {
+        _portals?.Clear();
+
+        if (!portalPrefab)
+        {
+            return;
+        }
+                
+        _portals = new SimplePortalSpace(transform, portalPrefab);
+
+        var p0 = _portals.AddPortal(null,  Vector3.forward, new Vector3(0, 0, -2.41f), null);
+        var p1 = _portals.AddPortal(null, -Vector3.forward, new Vector3(0, 0,  1.50f), null);
+
+        _portals.LinkPortals(p0, p1);
+
+        _portalA = _portals[p0].transform;
+        _quadDst = _portalA.GetComponentInChildren<MeshFilter>();
+        _quadDst.mesh = Instantiate(_quadDst.sharedMesh);
+
+        OverrideMaterial(_portalA.gameObject, "Assets/Scenes/Test/PortalATex.mat");
+
+        _portalB = _portals[p1].transform;
+        _quadSrc = _portalB.GetComponentInChildren<MeshFilter>();
+        _quadSrc.mesh = Instantiate(_quadSrc.sharedMesh);
+
+        OverrideMaterial(_portalB.gameObject, "Assets/Scenes/Test/PortalBChecker.mat");
+
+        _portalCamera = _portalA.GetComponentInChildren<Camera>(true);
+        _portalCamera.gameObject.SetActive(true);
+
+        void OverrideMaterial(GameObject go, string material)
+        {
+            var r = go.GetComponentInChildren<Renderer>();
+            r.material = AssetDatabase.LoadAssetAtPath<Material>(material);
+        }
+    }
+
+    private void OnGUI()
+    {
+        using (new EditorGUILayout.VerticalScope())
+        {
+            var lastEnabled = GUI.enabled;
+            GUI.enabled = portalPrefab;
+
+            try
+            {
+                if (GUILayout.Button("Re-generate Portals"))
+                {
+                    GeneratePortals();
+                }
+            }
+            finally
+            {
+                GUI.enabled = lastEnabled;
+            }
+        }
     }
 }
