@@ -168,7 +168,7 @@ namespace Wormhole
                     continue;
                 }
 
-                if (!IsPortalVisible(eye, p.Data))
+                if (eye == p.Data.PortalCamera || !IsPortalVisible(eye, p.Data))
                 {
                     p.Data.PortalCamera.enabled = false;
                     continue;
@@ -176,7 +176,7 @@ namespace Wormhole
 
                 if (p.Link == null)
                 {
-                    // TODO: handle an unlinkedf portal here.
+                    // TODO: handle an unlinked portal here.
                     continue;
                 }
 
@@ -197,7 +197,7 @@ namespace Wormhole
             portalCamera.transform.rotation = Quaternion.LookRotation(m.MultiplyVector(Vector3.forward), m.MultiplyVector(Vector3.up));
             portalCamera.transform.localScale = eye.transform.localScale;
 
-            // Eric Lengyel method follow
+            // Eric Lengyel method follows
             var Z = portalCamera.worldToCameraMatrix;
             var n = Z.MultiplyVector(dst.forward);
             var c = Z.MultiplyPoint3x4(dst.position + nearPlaneOffset * dst.forward);
@@ -216,6 +216,7 @@ namespace Wormhole
             M.SetRow(2, M_4);
 
             portalCamera.projectionMatrix = M;
+            portalCamera.depth = eye.depth - 1;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

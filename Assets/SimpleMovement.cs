@@ -24,6 +24,7 @@ public class SimpleMovement : MonoBehaviour
     private bool _active;
     private bool _isInJump;
     private float _jumpTime;
+    private float _jumpElevation;
 
     private void Start()
     {
@@ -55,6 +56,7 @@ public class SimpleMovement : MonoBehaviour
         {
             _isInJump = true;
             _jumpTime = 0;
+            _jumpElevation = 0;
 
             return;
         }
@@ -108,7 +110,11 @@ public class SimpleMovement : MonoBehaviour
             _isInJump &= _jumpTime <= _jumpDuration;
 
             var x = 2 * _jumpTime / _jumpDuration - 1;
-            positionDst.y = _jumpHeight * Mathf.Clamp01(1 - x * x);
+            var y = Mathf.Clamp01(1 - x * x);
+
+            positionDst.y += _jumpHeight * (y - _jumpElevation);
+
+            _jumpElevation = y;
         }
 
         positionDst += t * _movementDir;

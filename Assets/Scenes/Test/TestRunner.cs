@@ -1,6 +1,8 @@
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using Wormhole;
 
 [ExecuteInEditMode]
@@ -24,29 +26,31 @@ public class TestRunner : MonoBehaviour
     private void Awake()
     {
         GeneratePortals();
+
+        RenderPipelineManager.beginCameraRendering += RenderPipelineManager_beginCameraRendering;
     }
 
-    private bool EnsureConrfigured()
+    private void OnDestroy()
     {
-        return mainCamera && receiverTexture && _portals != null;
+        RenderPipelineManager.beginCameraRendering -= RenderPipelineManager_beginCameraRendering;
     }
 
-    private void Update()
+    private void RenderPipelineManager_beginCameraRendering(ScriptableRenderContext context, Camera camera)
     {
         if (!EnsureConrfigured())
         {
             return;
         }
 
-        _portals.UpdateCameras(mainCamera);
+        _portals.UpdateCameras(camera);
 
         _portalCamera.targetTexture = receiverTexture;
+        //UniversalRenderPipeline.RenderSingleCamera(context, _portalCamera);
+    }
 
-        var P = _quadSrc.transform.localToWorldMatrix * Matrix4x4.Scale(new Vector3(-1, 1, 1));
-        _quadDst.sharedMesh.SetUVs(0, _quadDst.sharedMesh.vertices.Select(P.MultiplyPoint3x4)
-            .Select(_portalCamera.WorldToViewportPoint)
-            .Select(v3 => new Vector2(v3.x, v3.y))
-            .ToArray());
+    private bool EnsureConrfigured()
+    {
+        return mainCamera && receiverTexture && _portals != null;
     }
 
     private void GeneratePortals()
@@ -66,18 +70,19 @@ public class TestRunner : MonoBehaviour
         _portals.LinkPortals(p0, p1);
 
         _portalA = _portals[p0].transform;
-        _quadDst = _portalA.GetComponentInChildren<MeshFilter>();
-        _quadDst.mesh = Instantiate(_quadDst.sharedMesh);
+        //_quadDst = _portalA.GetComponentInChildren<MeshFilter>();
+        //_quadDst.mesh = Instantiate(_quadDst.sharedMesh);
 
         OverrideMaterial(_portalA.gameObject, "Assets/Scenes/Test/PortalATex.mat");
 
         _portalB = _portals[p1].transform;
-        _quadSrc = _portalB.GetComponentInChildren<MeshFilter>();
-        _quadSrc.mesh = Instantiate(_quadSrc.sharedMesh);
+        //_quadSrc = _portalB.GetComponentInChildren<MeshFilter>();
+        //_quadSrc.mesh = Instantiate(_quadSrc.sharedMesh);
 
         OverrideMaterial(_portalB.gameObject, "Assets/Scenes/Test/PortalBChecker.mat");
 
         _portalCamera = _portalA.GetComponentInChildren<Camera>(true);
+        _portalCamera.enabled = false;
         _portalCamera.gameObject.SetActive(true);
 
         void OverrideMaterial(GameObject go, string material)
